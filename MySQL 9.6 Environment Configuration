@@ -1,1 +1,135 @@
 MySQL 9.6 环境配置
+
+# MySQL 9.6 本地环境配置与连接（包含踩坑）
+
+## 一、 核心概念梳理
+
+* **bin 与 Path：** `bin` 是存放 MySQL 各种执行程序（如 `mysql.exe`、`mysqld.exe`）的文件夹。将 `bin` 目录添加到系统的 **Path 环境变量** 中，是为了让 Windows 系统能在任何路径下直接识别并运行 MySQL 命令。
+* **服务端 (Server) 与 客户端 (Client)：**
+* **服务端 (`mysqld`)：** 运行在后台的数据库核心程序，负责存储和管理数据，没有图形界面。
+* **客户端 (`mysql`)：** 我们用来输入命令、跟服务端“对话”的工具（如 CMD 命令行窗口，或以后用的可视化软件）。
+
+---
+
+## 二、 环境配置标准流程 (Windows)
+
+**⚠️ 核心前提：** 以下所有命令提示符 (CMD) 操作，**必须以“管理员身份”运行**！
+
+### 1. 配置环境变量 (Path)
+
+1. 复制 MySQL 安装目录下的 `bin` 路径（例：`E:\Program Files (x86)\MySQL Server 9.6\bin`）。
+2. 打开系统“环境变量”设置 -> 找到“系统变量”中的 `Path` -> 点击“编辑” -> “新建” -> 粘贴路径并保存。
+3. **验证：** 新开一个 CMD 窗口，输入 `mysqld --version`，出现版本号即为成功。
+
+### 2. 创建配置文件 (`my.ini`)
+
+在 MySQL 安装根目录（即 `bin` 的上一级）新建一个名为 `my.ini` 的文本文件，输入以下内容：
+*(注意：路径建议使用正斜杠 `/`，且必须确保文件没有被隐藏为 `.txt` 后缀)*
+
+```ini
+[mysqld]
+# 设置3306端口
+port=3306
+# 设置mysql的安装目录
+basedir=E:/Program Files (x86)/MySQL Server 9.6
+# 设置mysql数据库的数据的存放目录
+datadir=E:/Program Files (x86)/MySQL Server 9.6/data
+# 允许最大连接数
+max_connections=200
+# 服务端使用的字符集默认为utf8mb4
+character-set-server=utf8mb4
+# 创建新表时将使用的默认存储引擎
+default-storage-engine=INNODB
+
+```
+
+### 3. 初始化数据库
+
+* **注意：** 执行此步前，必须确保安装目录下的 `data` 文件夹是**不存在的**或**完全为空**的。
+
+```bash
+mysqld --initialize --console
+
+```
+
+*执行后，屏幕最后几行会生成一个 **临时密码**（形如 `root@localhost: xxxx`），务必复制并妥善保存！*
+
+### 4. 安装并启动服务
+
+```bash
+# 1. 安装为 Windows 服务
+mysqld --install
+
+# 2. 启动服务
+net start mysql
+
+```
+
+---
+
+## 三、 连接服务端与基础操作
+
+成功启动 `net start mysql` 后，即可使用客户端连接服务端。
+
+### 1. 三种连接方式
+
+* **方式一：标准连接（推荐日常使用）**
+默认连接本机的 3306 端口。输入后回车，在提示处输入密码（输入时屏幕无显示）。
+```bash
+mysql -u root -p
+
+```
+
+
+* **方式二：完整参数连接（用于连接远程/公司服务器）**
+包含 IP 地址 (`-h`) 和 端口号 (`-P`)。`127.0.0.1` 代表本机。
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -p
+
+```
+
+
+* **方式三：单行快捷连接（极不推荐，密码会明文暴露）**
+```bash
+mysql -uroot -p你的密码
+
+```
+
+
+
+### 2. 首次登录必做：修改密码
+
+使用临时密码登录进入 `mysql>` 提示符后，必须执行以下 SQL 语句修改密码：
+
+```sql
+ALTER USER 'root'@'localhost' IDENTIFIED BY '你的新密码';
+
+```
+
+### 3. 基础 SQL 语法法则
+
+**所有 SQL 语句必须以英文分号 `;` 结尾！** 如果漏打分号按了回车，屏幕会出现 `->` 提示符，此时补上 `;` 再回车即可。
+
+```sql
+# 查看当前所有的数据库
+SHOW DATABASES;
+
+```
+
+---
+
+## 四、 常见报错与终极排错指南
+
+1. **报错 `net start mysql` 提示服务无法启动 (错误 3534)**
+* **排错动作：** 去 `data` 文件夹下寻找 `.err` 结尾的日志文件，拉到最底部查看 `[ERROR]` 信息。
+* **常见原因 1 - 配置格式错误：** `my.ini` 后缀被隐藏成了 `.txt`，或者文件编码不是 ANSI，或者路径斜杠格式错误。
+* **常见原因 2 - 初始化冲突：** 上一次初始化失败，`data` 文件夹里有残留损坏数据。**解决：** 删除整个 `data` 文件夹重新执行 `mysqld --initialize --console`。
+
+
+2. **报错 端口被占用 (`Bind on TCP/IP port... Do you already have another mysqld server running on port: 3306?`)**
+* **原因：** 后台有残留的“僵尸”进程霸占了 3306 端口。
+* **解决：** 在管理员 CMD 中强制结束该进程：
+```bash
+taskkill /F /IM mysqld.exe /T
+
+```
